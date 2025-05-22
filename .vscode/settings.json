@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "osms_api.h": "c",
+        "ola.h": "c",
+        "string.h": "c"
+    }
+}

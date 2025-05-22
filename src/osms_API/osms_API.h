@@ -1,11 +1,16 @@
-#pragma once
 #include "../osms_File/osms_File.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+#pragma once
+
+extern FILE* memory_file;
+
 
 // funciones generales
+void os_mount(char* memory_path);
 
-// void os_mount(char* memory_path);
-
-// void os_ls_processes();
+void os_ls_processes();
 
 // int os_exists(int process_id, char* file_name);
 
@@ -15,7 +20,7 @@
 
 // // funciones procesos
 
-// int os_start_process(int process_id, char* process_name);
+int os_start_process(int process_id, char* process_name);
 
 // int os_finish_process(int process_id);
 
