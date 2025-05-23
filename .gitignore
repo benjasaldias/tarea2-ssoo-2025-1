@@ -2,3 +2,4 @@ memformat.bin
 memfilled.bin
 osms
 /Archivos
+/src/osms/main.c
