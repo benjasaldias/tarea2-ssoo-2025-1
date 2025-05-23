@@ -6,13 +6,21 @@
 
 extern FILE* memory_file;
 
+// auxiliares
+void execute_os_exists(int process_id, char* file_name) {  
+    if (os_exists(process_id, file_name) == 1) {
+        printf("\nOS_EXISTS - Archivo '%s' existe en proceso %d.\n", file_name, process_id);
+        return;
+    }
+    printf("\nOS_EXISTS - Archivo '%s' NO existe en proceso %d.\n", file_name, process_id);
+}
 
 // funciones generales
 void os_mount(char* memory_path);
 
 void os_ls_processes();
 
-// int os_exists(int process_id, char* file_name);
+int os_exists(int process_id, char* file_name);
 
 // void os_ls_files(int process_id);
 

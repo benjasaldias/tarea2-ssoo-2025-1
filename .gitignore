@@ -3,5 +3,6 @@ memfilled.bin
 osms
 /Archivos
 /src/osms/main.c
+/obj
 memformat.zip
 memfilled.zip

@@ -8,7 +8,7 @@ FILE* memory_file = NULL;
 
 // funciones generales 
 void os_mount(char* memory_path) {
-    printf("Abriendo memoria...\n");
+    printf("OS_MOUNT - Abriendo memoria...\n");
     memory_file = fopen(memory_path, "rb+");
     if (!memory_file) {
         perror("Error al abrir la memoria");
@@ -44,7 +44,7 @@ int os_start_process(int process_id, char* process_name) {
             strncpy((char*)&entrada[1], process_name, 14); // Nombre
             entrada[15] = (unsigned char)process_id; // ID
 
-            printf("\nComenzando Proceso: %s\n", process_name);
+            printf("\nOS_START_PROCESS - Comenzando Proceso: %s\n", process_name);
 
             // Tabla de archivos ya está en 0 (entrada inicializada en 0)
             fwrite(entrada, 1, PCB_ENTRY_SIZE, memory_file);
@@ -59,7 +59,7 @@ int os_start_process(int process_id, char* process_name) {
 }
 
 void os_ls_processes() {
-    printf("\nLista de Procesos:\n");
+    printf("\nOS_LS_PROCESSES - Lista de Procesos:\n");
     if (!memory_file) {
         fprintf(stderr, "Memoria no montada.\n");
         return;
@@ -82,6 +82,43 @@ void os_ls_processes() {
     }
 }
 
+int os_exists(int process_id, char* file_name) {
+    if (!memory_file) {
+        fprintf(stderr, "Memoria no montada.\n");
+        return 0;
+    }
+
+    for (int i = 0; i < PCB_COUNT; i++) {
+        long pcb_offset = PCB_START + i * PCB_ENTRY_SIZE;
+
+        fseek(memory_file, pcb_offset, SEEK_SET);
+        unsigned char entrada[16];
+        fread(entrada, 1, 16, memory_file);
+
+        if (entrada[0] != 0x01) continue; // proceso no válido
+        if (entrada[15] != (unsigned char)process_id) continue;
+
+        // Proceso encontrado — revisar sus archivos
+        for (int j = 0; j < 10; j++) {
+            long archivo_offset = pcb_offset + 16 + j * 24;
+
+            fseek(memory_file, archivo_offset, SEEK_SET);
+            unsigned char validez;
+            fread(&validez, 1, 1, memory_file);
+            if (validez != 0x01) continue;
+
+            char nombre[15] = {0};
+            fread(nombre, 1, 14, memory_file);  // no incluye \0, pero le agregamos
+            if (strncmp(nombre, file_name, 14) == 0) {
+                return 1;
+            }
+        }
+
+        return 0; // proceso existe pero archivo no
+    }
+
+    return 0; // proceso no encontrado
+}
 
 // // funciones procesos
 
