@@ -4,11 +4,10 @@
 
 #pragma once
 
-extern FILE* memory_file;
-
+extern FILE *memory_file;
 
 // funciones generales
-void os_mount(char* memory_path);
+void os_mount(char *memory_path);
 
 void os_ls_processes();
 
@@ -20,11 +19,11 @@ void os_ls_processes();
 
 // // funciones procesos
 
-int os_start_process(int process_id, char* process_name);
+int os_start_process(int process_id, char *process_name);
 
-// int os_finish_process(int process_id);
+int os_finish_process(int process_id);
 
-// int os_rename process(int process id, char* new name);
+int os_rename_process(int process_id, char *new_name);
 
 // // funciones archivos
 
@@ -41,4 +40,3 @@ int os_start_process(int process_id, char* process_name);
 // BONUS
 
 // int os_cp(int pid src, char* fname src, int pid dst, char* fname dst);
-
