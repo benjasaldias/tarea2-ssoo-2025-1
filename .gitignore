@@ -1,6 +1,8 @@
 memformat.bin
 memfilled.bin
+osms
 /Archivos
+/src/osms/main.c
 memformat.zip
 memfilled.zip
-osms/main.c
+/obj

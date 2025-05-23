@@ -9,6 +9,7 @@ FILE *memory_file = NULL;
 // funciones generales
 void os_mount(char *memory_path)
 {
+    printf("Abriendo memoria...\n");
     memory_file = fopen(memory_path, "rb+");
     if (!memory_file)
     {
@@ -67,6 +68,8 @@ int os_start_process(int process_id, char *process_name)
             strncpy((char *)&entrada[1], process_name, 14); // Nombre
             entrada[15] = (unsigned char)process_id;        // ID
 
+            printf("\nComenzando Proceso: %s\n", process_name);
+
             // Tabla de archivos ya está en 0 (entrada inicializada en 0)
             fwrite(entrada, 1, PCB_ENTRY_SIZE, memory_file);
             fflush(memory_file);
@@ -81,6 +84,7 @@ int os_start_process(int process_id, char *process_name)
 
 void os_ls_processes()
 {
+    printf("\nLista de Procesos:\n");
     if (!memory_file)
     {
         fprintf(stderr, "Memoria no montada.\n");

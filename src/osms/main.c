@@ -17,5 +17,6 @@ int main(int argc, char const *argv[])
     os_finish_process(7);
     os_finish_process(10);
     os_ls_processes();
+    fclose(memory_file);
     return 0;
 }
