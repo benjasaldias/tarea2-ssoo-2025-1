@@ -3,6 +3,28 @@
 #include <stdint.h>  // uint64_t, uint32_t
 #include <string.h>  //para strcmp
 #include <stdbool.h> // bool, true, false
+#include "osms_File.h"
+
+#define PCB_START 0
+#define PCB_ENTRY_SIZE 256
+#define PCB_COUNT 32
+
+#define PCB_NAME_OFFSET 1
+#define PCB_PROCESS_ID_OFFSET 15
+#define PCB_FILE_TABLE_OFFSET 16
+#define PROCESS_NAME_MAX_LEN 14
+
+#define MAX_FILES_PER_PROCESS 10
+#define FILE_ENTRY_SIZE 24
+
+#define IPT_OFFSET (8 * 1024)
+#define IPT_ENTRY_SIZE 3
+#define IPT_ENTRY_COUNT 65536
+
+#define FRAME_BITMAP_OFFSET ((8 + 192) * 1024)
+#define FRAME_BITMAP_SIZE (8 * 1024)
+
+#define FILE_TABLE_OFFSET 16
 
 char *path;
 FILE *memory_file = NULL;
@@ -28,70 +50,6 @@ void os_mount(char *memory_path)
         perror("Error al abrir la memoria");
         exit(EXIT_FAILURE);
     }
-}
-
-#define PCB_START 0
-#define PCB_ENTRY_SIZE 256
-#define PCB_COUNT 32
-
-#define PCB_NAME_OFFSET 1
-#define PCB_PROCESS_ID_OFFSET 15
-#define PCB_FILE_TABLE_OFFSET 16
-#define PROCESS_NAME_MAX_LEN 14
-
-#define MAX_FILES_PER_PROCESS 10
-#define FILE_ENTRY_SIZE 24
-
-#define IPT_OFFSET (8 * 1024)
-#define IPT_ENTRY_SIZE 3
-#define IPT_ENTRY_COUNT 65536
-
-#define FRAME_BITMAP_OFFSET ((8 + 192) * 1024)
-#define FRAME_BITMAP_SIZE (8 * 1024)
-
-int os_start_process(int process_id, char *process_name)
-{
-    if (!memory_file)
-    {
-        fprintf(stderr, "Memoria no montada.\n");
-        return -1;
-    }
-
-    if (strlen(process_name) > 14)
-        return -1;
-
-    // Falta asegurar que no exista un proceso con el mismo id
-
-    for (int i = 0; i < PCB_COUNT; i++)
-    {
-        long offset = PCB_START + i * PCB_ENTRY_SIZE;
-
-        fseek(memory_file, offset, SEEK_SET);
-        unsigned char estado;
-        fread(&estado, 1, 1, memory_file);
-
-        if (estado == 0x00)
-        {
-            // Entrada libre encontrada
-            fseek(memory_file, offset, SEEK_SET);
-            unsigned char entrada[PCB_ENTRY_SIZE] = {0};
-
-            entrada[0] = 0x01;                              // Estado
-            strncpy((char *)&entrada[1], process_name, 14); // Nombre
-            entrada[15] = (unsigned char)process_id;        // ID
-
-            printf("\nOS_START_PROCESS - Comenzando Proceso: %s\n", process_name);
-
-            // Tabla de archivos ya está en 0 (entrada inicializada en 0)
-            fwrite(entrada, 1, PCB_ENTRY_SIZE, memory_file);
-            fflush(memory_file);
-
-            return 0;
-        }
-    }
-
-    // No hay espacio disponible
-    return -1;
 }
 
 void os_ls_processes()
@@ -176,7 +134,6 @@ void os_ls_files(int process_id)
         fprintf(stderr, "Memoria no montada.\n");
         return;
     }
-    const int FILE_TABLE_OFFSET = 16;
 
     for (int i = 0; i < PCB_COUNT; i++)
     {
@@ -266,6 +223,52 @@ void os_frame_bitmap()
 
     printf("USADOS %d\n", usados);
     printf("LIBRES %d\n", libres);
+}
+
+// // funciones procesos
+int os_start_process(int process_id, char *process_name)
+{
+    if (!memory_file)
+    {
+        fprintf(stderr, "Memoria no montada.\n");
+        return -1;
+    }
+
+    if (strlen(process_name) > 14)
+        return -1;
+
+    // Falta asegurar que no exista un proceso con el mismo id
+
+    for (int i = 0; i < PCB_COUNT; i++)
+    {
+        long offset = PCB_START + i * PCB_ENTRY_SIZE;
+
+        fseek(memory_file, offset, SEEK_SET);
+        unsigned char estado;
+        fread(&estado, 1, 1, memory_file);
+
+        if (estado == 0x00)
+        {
+            // Entrada libre encontrada
+            fseek(memory_file, offset, SEEK_SET);
+            unsigned char entrada[PCB_ENTRY_SIZE] = {0};
+
+            entrada[0] = 0x01;                              // Estado
+            strncpy((char *)&entrada[1], process_name, 14); // Nombre
+            entrada[15] = (unsigned char)process_id;        // ID
+
+            printf("\nOS_START_PROCESS - Comenzando Proceso: %s\n", process_name);
+
+            // Tabla de archivos ya está en 0 (entrada inicializada en 0)
+            fwrite(entrada, 1, PCB_ENTRY_SIZE, memory_file);
+            fflush(memory_file);
+
+            return 0;
+        }
+    }
+
+    // No hay espacio disponible
+    return -1;
 }
 
 int os_finish_process(int process_id)
@@ -432,6 +435,79 @@ int os_rename_process(int process_id, char *new_name)
     // printf("Proceso %d renombrado a '%s'.\n", process_id, new_name);
     return 0; // Éxito
 }
-// // funciones procesos
 
 // // funciones archivos
+osmsFile* os_open(int process_id, char* file_name, char mode) {
+    if (!memory_file) return NULL;
+
+    for (int i = 0; i < PCB_COUNT; i++) {
+        long pcb_offset = PCB_START + i * PCB_ENTRY_SIZE;
+        fseek(memory_file, pcb_offset, SEEK_SET);
+        unsigned char header[16];
+        fread(header, 1, 16, memory_file);
+
+        if (header[0] != 0x01 || header[15] != (unsigned char)process_id)
+            continue;
+
+        for (int j = 0; j < 10; j++) {
+            long entry_offset = pcb_offset + FILE_TABLE_OFFSET + j * FILE_ENTRY_SIZE;
+            fseek(memory_file, entry_offset, SEEK_SET);
+
+            unsigned char entrada[24];
+            fread(entrada, 1, 24, memory_file);
+
+            int valido = entrada[0] == 0x01;
+            char nombre[15] = {0};
+            memcpy(nombre, &entrada[1], 14);
+
+            if (valido && strncmp(nombre, file_name, 14) == 0) {
+                if (mode == 'r') {
+                    osmsFile* f = malloc(sizeof(osmsFile));
+                    f->process_id = process_id;
+                    f->file_index = j;
+                    f->size = 0;
+                    for (int k = 0; k < 5; k++) {
+                        f->size |= ((unsigned long)entrada[15 + k]) << (8 * k);
+                    }
+                    f->virtual_addr = 0;
+                    for (int k = 0; k < 4; k++) {
+                        f->virtual_addr |= ((unsigned int)entrada[6 + k + 9]) << (8 * k);
+                    }
+                    strncpy(f->name, nombre, 14);
+                    return f;
+                } else {
+                    return NULL; // ya existe, no se puede escribir
+                }
+            }
+
+            // Si modo es 'w' y esta entrada está libre
+            if (!valido && mode == 'w') {
+                osmsFile* f = malloc(sizeof(osmsFile));
+                f->process_id = process_id;
+                f->file_index = j;
+                f->size = 0;
+                f->virtual_addr = 0;
+                strncpy(f->name, file_name, 14);
+
+                // escribir entrada
+                fseek(memory_file, entry_offset, SEEK_SET);
+                unsigned char nueva[24] = {0};
+                nueva[0] = 0x01;
+                strncpy((char*)&nueva[1], file_name, 14);
+                fwrite(nueva, 1, 24, memory_file);
+                fflush(memory_file);
+                return f;
+            }
+        }
+
+        return NULL;
+    }
+
+    return NULL;
+}
+
+void os_close(osmsFile* file_desc) {
+    if (file_desc) free(file_desc);
+}
+
+

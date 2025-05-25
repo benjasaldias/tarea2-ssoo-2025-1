@@ -1,6 +1,6 @@
-#include "../osms_File/osms_File.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include "osms_File.h"
 
 #pragma once
 
@@ -27,7 +27,7 @@ int os_rename_process(int process_id, char *new_name);
 
 // // funciones archivos
 
-// OsmsFile* os_open(int process_id, char* file_name, char mode);
+osmsFile* os_open(int process_id, char* file_name, char mode);
 
 // int os_read_file(osrmsFile* file desc, char* dest);
 
