@@ -1,9 +1,10 @@
 {
     "files.associations": {
         "osms_api.h": "c",
-        "ola.h": "c",
         "string.h": "c",
         "stdio.h": "c",
-        "osms_file.h": "c"
+        "osms_File.h": "c",
+        "osrms_api.h": "c",
+        "osrms_File.h": "c"
     }
 }

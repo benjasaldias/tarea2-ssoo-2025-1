@@ -1,2 +1,0 @@
-// osms_file.c
-

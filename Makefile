@@ -45,10 +45,10 @@ LIB=$(MTH)
 ###############################################################################
 
 # Directorios con elementos de uso común
-COMMON=osms_API osms_File
+COMMON=osrms_API osrms_File
 
 # Directorios que serán compilados a un programa
-PROGRAMS=osms
+PROGRAMS=osrms
 
 # Todos los directorios que contienen archivos de código
 SRCDIR=$(COMMON) $(PROGRAMS)

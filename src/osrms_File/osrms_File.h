@@ -6,4 +6,4 @@ typedef struct {
     unsigned int virtual_addr; // dirección virtual del archivo
     unsigned long size;     // tamaño en bytes
     char name[15];          // nombre del archivo
-} osmsFile;
+} osrmsFile;

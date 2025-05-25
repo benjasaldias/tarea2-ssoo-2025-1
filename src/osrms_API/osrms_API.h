@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "osms_File.h"
+// #include "osrms_File.h"
+#include "../osrms_File/osrms_File.h"
 
 #pragma once
 
@@ -27,7 +28,7 @@ int os_rename_process(int process_id, char *new_name);
 
 // // funciones archivos
 
-osmsFile* os_open(int process_id, char* file_name, char mode);
+osrmsFile* os_open(int process_id, char* file_name, char mode);
 
 // int os_read_file(osrmsFile* file desc, char* dest);
 
@@ -35,8 +36,15 @@ osmsFile* os_open(int process_id, char* file_name, char mode);
 
 // void os_delete_file(int process id, char* file name);
 
-// void os_close(OsmsFile* file_desc);
+void os_close(osrmsFile* file_desc);
 
 // BONUS
 
 // int os_cp(int pid src, char* fname src, int pid dst, char* fname dst);
+
+// // ejecuciones
+void execute_os_exists(int process_id, char *file_name);
+
+osrmsFile* execute_os_open(int process_id, char* file_name, char* mode);
+
+void execute_os_close(osrmsFile* file_desc);

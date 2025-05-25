@@ -3,7 +3,8 @@
 #include <stdint.h>  // uint64_t, uint32_t
 #include <string.h>  //para strcmp
 #include <stdbool.h> // bool, true, false
-#include "osms_File.h"
+// #include "osrms_File.h"
+#include "../osrms_File/osrms_File.h"
 
 #define PCB_START 0
 #define PCB_ENTRY_SIZE 256
@@ -30,14 +31,8 @@ char *path;
 FILE *memory_file = NULL;
 
 // auxiliares
-void execute_os_exists(int process_id, char *file_name)
-{
-    if (os_exists(process_id, file_name) == 1)
-    {
-        printf("\nOS_EXISTS - Archivo '%s' existe en proceso %d.\n", file_name, process_id);
-        return;
-    }
-    printf("\nOS_EXISTS - Archivo '%s' NO existe en proceso %d.\n", file_name, process_id);
+static bool string_equals(char *string1, char *string2) {
+  return !strcmp(string1, string2);
 }
 
 // funciones generales
@@ -226,40 +221,40 @@ void os_frame_bitmap()
 }
 
 // // funciones procesos
-int os_start_process(int process_id, char *process_name)
-{
-    if (!memory_file)
-    {
+int os_start_process(int process_id, char* process_name) {
+    if (!memory_file) {
         fprintf(stderr, "Memoria no montada.\n");
         return -1;
     }
 
-    if (strlen(process_name) > 14)
-        return -1;
+    if (strlen(process_name) > 14) return -1;
 
-    // Falta asegurar que no exista un proceso con el mismo id
+    for (int i = 0; i < PCB_COUNT; i++) {
+        long offset = PCB_START + i * PCB_ENTRY_SIZE;
+        fseek(memory_file, offset, SEEK_SET);
+        unsigned char entrada[16];
+        fread(entrada, 1, 16, memory_file);
 
-    for (int i = 0; i < PCB_COUNT; i++)
-    {
+        if (entrada[0] == 0x01 && entrada[15] == (unsigned char)process_id) {
+            return -1; 
+        }
+    }
+
+    for (int i = 0; i < PCB_COUNT; i++) {
         long offset = PCB_START + i * PCB_ENTRY_SIZE;
 
         fseek(memory_file, offset, SEEK_SET);
         unsigned char estado;
         fread(&estado, 1, 1, memory_file);
 
-        if (estado == 0x00)
-        {
-            // Entrada libre encontrada
+        if (estado == 0x00) {
             fseek(memory_file, offset, SEEK_SET);
             unsigned char entrada[PCB_ENTRY_SIZE] = {0};
 
-            entrada[0] = 0x01;                              // Estado
-            strncpy((char *)&entrada[1], process_name, 14); // Nombre
-            entrada[15] = (unsigned char)process_id;        // ID
+            entrada[0] = 0x01;
+            strncpy((char*)&entrada[1], process_name, 14);
+            entrada[15] = (unsigned char)process_id; 
 
-            printf("\nOS_START_PROCESS - Comenzando Proceso: %s\n", process_name);
-
-            // Tabla de archivos ya está en 0 (entrada inicializada en 0)
             fwrite(entrada, 1, PCB_ENTRY_SIZE, memory_file);
             fflush(memory_file);
 
@@ -267,7 +262,6 @@ int os_start_process(int process_id, char *process_name)
         }
     }
 
-    // No hay espacio disponible
     return -1;
 }
 
@@ -437,7 +431,7 @@ int os_rename_process(int process_id, char *new_name)
 }
 
 // // funciones archivos
-osmsFile* os_open(int process_id, char* file_name, char mode) {
+osrmsFile* os_open(int process_id, char* file_name, char mode) {
     if (!memory_file) return NULL;
 
     for (int i = 0; i < PCB_COUNT; i++) {
@@ -462,7 +456,7 @@ osmsFile* os_open(int process_id, char* file_name, char mode) {
 
             if (valido && strncmp(nombre, file_name, 14) == 0) {
                 if (mode == 'r') {
-                    osmsFile* f = malloc(sizeof(osmsFile));
+                    osrmsFile* f = calloc(1, sizeof(osrmsFile));
                     f->process_id = process_id;
                     f->file_index = j;
                     f->size = 0;
@@ -482,7 +476,7 @@ osmsFile* os_open(int process_id, char* file_name, char mode) {
 
             // Si modo es 'w' y esta entrada está libre
             if (!valido && mode == 'w') {
-                osmsFile* f = malloc(sizeof(osmsFile));
+                osrmsFile* f = calloc(1, sizeof(osrmsFile));
                 f->process_id = process_id;
                 f->file_index = j;
                 f->size = 0;
@@ -506,8 +500,41 @@ osmsFile* os_open(int process_id, char* file_name, char mode) {
     return NULL;
 }
 
-void os_close(osmsFile* file_desc) {
-    if (file_desc) free(file_desc);
+void os_close(osrmsFile* file_desc) {
+    if (file_desc != NULL) free(file_desc);
 }
 
+// ejecuciones
+void execute_os_exists(int process_id, char *file_name)
+{
+    if (os_exists(process_id, file_name) == 1)
+    {
+        printf("\nOS_EXISTS - Archivo '%s' existe en proceso %d.\n", file_name, process_id);
+        return;
+    }
+    printf("\nOS_EXISTS - Archivo '%s' NO existe en proceso %d.\n", file_name, process_id);
+}
 
+osrmsFile* execute_os_open(int process_id, char* file_name, char* mode) {
+    printf("\nOS_OPEN - ");
+    osrmsFile* result = NULL;
+    result = os_open(process_id, file_name, *mode);
+    if (result != NULL) {
+        printf("Abriendo archivo '%s' de proceso %d en modo %s.\n", file_name, process_id, mode);
+    }
+    else {
+        printf("Error: No se pudo abrir '%s' en modo de %s.\n", file_name, mode);
+    }
+    return result;
+}
+
+void execute_os_close(osrmsFile* file_desc) {
+    if (!file_desc) {
+        printf("\nOS_CLOSE - Error: archivo no encontrado.\n");
+        return;
+    }
+    char* file_name = file_desc->name;
+    printf("\nOS_CLOSE - Cerrando archivo: %s.\n", file_name);
+    os_close(file_desc);
+    return;
+}
