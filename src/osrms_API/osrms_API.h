@@ -18,7 +18,7 @@ void os_ls_files(int process_id);
 
 void os_frame_bitmap();
 
-// // funciones procesos
+// funciones procesos
 
 int os_start_process(int process_id, char *process_name);
 
@@ -26,25 +26,25 @@ int os_finish_process(int process_id);
 
 int os_rename_process(int process_id, char *new_name);
 
-// // funciones archivos
+// funciones archivos
 
-osrmsFile* os_open(int process_id, char* file_name, char mode);
+osrmsFile *os_open(int process_id, char *file_name, char mode);
 
-// int os_read_file(osrmsFile* file desc, char* dest);
+int os_read_file(osrmsFile *file_desc, char *dest);
 
-// int os_write_file(osrmsFile* file desc, char* src);
+int os_write_file(osrmsFile *file_desc, char *src);
 
-// void os_delete_file(int process id, char* file name);
+// void os_delete_file(int process_id, char* file_name);
 
-void os_close(osrmsFile* file_desc);
+void os_close(osrmsFile *file_desc);
 
 // BONUS
 
 // int os_cp(int pid src, char* fname src, int pid dst, char* fname dst);
 
-// // ejecuciones
+// ejecuciones
 void execute_os_exists(int process_id, char *file_name);
 
-osrmsFile* execute_os_open(int process_id, char* file_name, char* mode);
+osrmsFile *execute_os_open(int process_id, char *file_name, char *mode);
 
-void execute_os_close(osrmsFile* file_desc);
+void execute_os_close(osrmsFile *file_desc);
