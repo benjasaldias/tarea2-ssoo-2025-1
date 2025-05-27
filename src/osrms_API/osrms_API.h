@@ -34,7 +34,7 @@ int os_read_file(osrmsFile *file_desc, char *dest);
 
 int os_write_file(osrmsFile *file_desc, char *src);
 
-// void os_delete_file(int process_id, char* file_name);
+void os_delete_file(int process_id, char *file_name);
 
 void os_close(osrmsFile *file_desc);
 

@@ -50,7 +50,6 @@ void write_byte(long offset, uint8_t value)
     fwrite(&value, sizeof(uint8_t), 1, memory_file);
 }
 
-// Lee un byte de la posición especificada
 uint8_t read_byte(long offset)
 {
     fseek(memory_file, offset, SEEK_SET);
@@ -59,17 +58,15 @@ uint8_t read_byte(long offset)
     return value;
 }
 
-// Escribe un short (2 bytes) en la posición especificada (little endian)
 void write_short(long offset, uint16_t value)
 {
     fseek(memory_file, offset, SEEK_SET);
     uint8_t bytes[2];
-    bytes[0] = (uint8_t)(value & 0xFF);        // LSB
-    bytes[1] = (uint8_t)((value >> 8) & 0xFF); // MSB
+    bytes[0] = (uint8_t)(value & 0xFF);
+    bytes[1] = (uint8_t)((value >> 8) & 0xFF);
     fwrite(bytes, sizeof(uint8_t), 2, memory_file);
 }
 
-// Lee un short (2 bytes) de la posición especificada (little endian)
 uint16_t read_short(long offset)
 {
     fseek(memory_file, offset, SEEK_SET);
@@ -79,7 +76,6 @@ uint16_t read_short(long offset)
     return value;
 }
 
-// Escribe un int (4 bytes) en la posición especificada (little endian)
 void write_int(long offset, uint32_t value)
 {
     fseek(memory_file, offset, SEEK_SET);
@@ -91,7 +87,6 @@ void write_int(long offset, uint32_t value)
     fwrite(bytes, sizeof(uint8_t), 4, memory_file);
 }
 
-// Lee un int (4 bytes) de la posición especificada (little endian)
 uint32_t read_int(long offset)
 {
     fseek(memory_file, offset, SEEK_SET);
@@ -104,20 +99,28 @@ uint32_t read_int(long offset)
     return value;
 }
 
-// Lee una cadena de caracteres
+uint32_t read_ipt_entry_value(long offset)
+{
+    fseek(memory_file, offset, SEEK_SET);
+    uint8_t bytes[3];
+    fread(bytes, sizeof(uint8_t), 3, memory_file);
+    uint32_t value = ((uint32_t)bytes[2] << 16) |
+                     ((uint32_t)bytes[1] << 8) |
+                     bytes[0];
+    return value;
+}
+
 void read_string(long offset, char *buffer, size_t max_len)
 {
     fseek(memory_file, offset, SEEK_SET);
     fread(buffer, sizeof(char), max_len, memory_file);
-    buffer[max_len] = '\0'; // Asegurar terminación nula
+    buffer[max_len] = '\0';
 }
 
-// Escribe una cadena de caracteres
 void write_string(long offset, char *str, size_t max_len)
 {
     fseek(memory_file, offset, SEEK_SET);
     fwrite(str, sizeof(char), strnlen(str, max_len), memory_file);
-    // Rellenar con ceros si el nombre es más corto que max_len
     for (size_t i = strnlen(str, max_len); i < max_len; i++)
     {
         write_byte(offset + i, 0x00);
@@ -258,7 +261,7 @@ void os_ls_files(int process_id)
             uint32_t dir_virtual = 0;
             for (int b = 0; b < 4; b++)
             {
-                dir_virtual |= ((uint32_t)entrada[6 + b + 9]) << (8 * b);
+                dir_virtual |= ((uint32_t)entrada[20 + b]) << (8 * b);
             }
 
             // Extraer VPN: bits 15 al 26
@@ -373,7 +376,6 @@ int os_finish_process(int process_id)
     unsigned char status_pcb;
     unsigned char current_pid_pcb;
 
-    // 1. Localizar la entrada del PCB
     for (int i = 0; i < PCB_COUNT; i++)
     {
         long current_pcb_offset = PCB_START + (i * PCB_ENTRY_SIZE);
@@ -382,7 +384,7 @@ int os_finish_process(int process_id)
         fread(&status_pcb, sizeof(unsigned char), 1, memory_file);
 
         if (status_pcb == 0x01)
-        { // Si la entrada está activa
+        {
             fseek(memory_file, current_pcb_offset + PCB_PROCESS_ID_OFFSET, SEEK_SET);
             fread(&current_pid_pcb, sizeof(unsigned char), 1, memory_file);
             if (current_pid_pcb == (unsigned char)process_id)
@@ -396,10 +398,9 @@ int os_finish_process(int process_id)
     if (pcb_entry_offset_found == -1)
     {
         fprintf(stderr, "Proceso %d no encontrado o ya terminado.\n", process_id);
-        return 1; // Proceso no existe o no está activo
+        return 1;
     }
 
-    // 2. Liberar frames: Iterar sobre la Tabla de Páginas Invertida (IPT)
     for (int pfn = 0; pfn < IPT_ENTRY_COUNT; pfn++)
     {
         long ipt_entry_disk_offset = IPT_OFFSET + (pfn * IPT_ENTRY_SIZE);
@@ -413,12 +414,10 @@ int os_finish_process(int process_id)
 
         if (validity_bit == 1 && entry_pid == process_id)
         {
-            // a. Marcar la entrada de la IPT como inválida (bit de validez a 0)
             ipt_data[0] &= 0x7F;
             fseek(memory_file, ipt_entry_disk_offset, SEEK_SET);
             fwrite(ipt_data, sizeof(unsigned char), IPT_ENTRY_SIZE, memory_file);
 
-            // b. Actualizar el Frame Bitmap para marcar el frame PFN como libre (bit = 0)
             long bitmap_byte_disk_offset = FRAME_BITMAP_OFFSET + (pfn / 8);
             int bit_in_byte_index = pfn % 8;
 
@@ -426,38 +425,28 @@ int os_finish_process(int process_id)
             fseek(memory_file, bitmap_byte_disk_offset, SEEK_SET);
             fread(&bitmap_byte_value, sizeof(unsigned char), 1, memory_file);
 
-            bitmap_byte_value &= ~(1 << bit_in_byte_index); // Poner el bit a 0
+            bitmap_byte_value &= ~(1 << bit_in_byte_index);
 
             fseek(memory_file, bitmap_byte_disk_offset, SEEK_SET);
             fwrite(&bitmap_byte_value, sizeof(unsigned char), 1, memory_file);
         }
     }
 
-    // 3. Limpiar la tabla de archivos del proceso en la PCB
     long file_table_start_offset = pcb_entry_offset_found + PCB_FILE_TABLE_OFFSET;
     unsigned char zero_byte = 0x00;
     for (int i = 0; i < MAX_FILES_PER_PROCESS; i++)
     {
         long file_entry_validity_offset = file_table_start_offset + (i * FILE_ENTRY_SIZE);
         fseek(memory_file, file_entry_validity_offset, SEEK_SET);
-        fwrite(&zero_byte, sizeof(unsigned char), 1, memory_file); // Marcar archivo como inválido
+        fwrite(&zero_byte, sizeof(unsigned char), 1, memory_file);
     }
 
-    // 4. Marcar la entrada del PCB como "no existe" (estado 0x00)
-    // Opcionalmente, también podrías limpiar el nombre y el ID.
     fseek(memory_file, pcb_entry_offset_found, SEEK_SET);
-    fwrite(&zero_byte, sizeof(unsigned char), 1, memory_file); // Estado: no existe
+    fwrite(&zero_byte, sizeof(unsigned char), 1, memory_file);
 
-    // Opcional: Limpiar nombre e ID en PCB
-    // char empty_name[PROCESS_NAME_MAX_LEN] = {0};
-    // fseek(memory_file, pcb_entry_offset_found + PCB_NAME_OFFSET, SEEK_SET);
-    // fwrite(empty_name, sizeof(char), PROCESS_NAME_MAX_LEN, memory_file);
-    // fseek(memory_file, pcb_entry_offset_found + PCB_PROCESS_ID_OFFSET, SEEK_SET);
-    // fwrite(&zero_byte, sizeof(unsigned char), 1, memory_file);
-
-    fflush(memory_file); // Asegurar todas las escrituras
-    // printf("Proceso %d terminado exitosamente.\n", process_id);
-    return 0; // Éxito
+    fflush(memory_file);
+    printf("Proceso %d terminado exitosamente.\n", process_id);
+    return 0;
 }
 
 int os_rename_process(int process_id, char *new_name)
@@ -478,14 +467,13 @@ int os_rename_process(int process_id, char *new_name)
     if (new_name_len == 0 || new_name_len > PROCESS_NAME_MAX_LEN)
     {
         fprintf(stderr, "Error: Longitud de nombre inválida (1-%d caracteres).\n", PROCESS_NAME_MAX_LEN);
-        return 1; // Nombre demasiado largo o vacío
+        return 1;
     }
 
     long pcb_entry_offset_found = -1;
     unsigned char status_pcb;
     unsigned char current_pid_pcb;
 
-    // 1. Localizar la entrada del PCB
     for (int i = 0; i < PCB_COUNT; i++)
     {
         long current_pcb_offset = PCB_START + (i * PCB_ENTRY_SIZE);
@@ -494,7 +482,7 @@ int os_rename_process(int process_id, char *new_name)
         fread(&status_pcb, sizeof(unsigned char), 1, memory_file);
 
         if (status_pcb == 0x01)
-        { // Si la entrada está activa
+        {
             fseek(memory_file, current_pcb_offset + PCB_PROCESS_ID_OFFSET, SEEK_SET);
             fread(&current_pid_pcb, sizeof(unsigned char), 1, memory_file);
             if (current_pid_pcb == (unsigned char)process_id)
@@ -508,22 +496,19 @@ int os_rename_process(int process_id, char *new_name)
     if (pcb_entry_offset_found == -1)
     {
         fprintf(stderr, "Proceso %d no encontrado para renombrar.\n", process_id);
-        return 1; // Proceso no existe o no está activo
+        return 1;
     }
 
-    // 2. Copiar el nuevo nombre al campo de nombre en la PCB (14 bytes)
     char name_buffer[PROCESS_NAME_MAX_LEN];
-    memset(name_buffer, 0, PROCESS_NAME_MAX_LEN); // Limpiar buffer
+    memset(name_buffer, 0, PROCESS_NAME_MAX_LEN);
     strncpy(name_buffer, new_name, PROCESS_NAME_MAX_LEN);
-    // strncpy no garantiza terminador nulo si strlen(new_name) >= PROCESS_NAME_MAX_LEN,
-    // pero como el campo es de tamaño fijo y name_buffer se inicializó a ceros, está bien.
 
     fseek(memory_file, pcb_entry_offset_found + PCB_NAME_OFFSET, SEEK_SET);
     fwrite(name_buffer, sizeof(char), PROCESS_NAME_MAX_LEN, memory_file);
 
-    fflush(memory_file); // Asegurar escritura
-    // printf("Proceso %d renombrado a '%s'.\n", process_id, new_name);
-    return 0; // Éxito
+    fflush(memory_file);
+    printf("Proceso %d renombrado a '%s'.\n", process_id, new_name);
+    return 0;
 }
 
 // // funciones archivos
@@ -580,7 +565,7 @@ osrmsFile *os_open(int process_id, char *file_name, char mode)
                     f->virtual_addr = 0;
                     for (int k = 0; k < 4; k++)
                     {
-                        f->virtual_addr |= ((unsigned int)entrada[6 + k + 9]) << (8 * k);
+                        f->virtual_addr |= ((unsigned int)entrada[20 + k]) << (8 * k);
                     }
                     printf("Virtual address: 0x%08X, Size: %lu\n", f->virtual_addr, f->size);
                     strncpy(f->name, nombre, 14);
@@ -669,33 +654,31 @@ void execute_os_close(osrmsFile *file_desc)
 
 uint16_t get_vpn_from_virtual_address(uint32_t virtual_address)
 {
-    return (virtual_address >> 15) & 0xFFF; // 0xFFF es 12 bits todos a 1
+    return (virtual_address >> 15) & 0xFFF;
 }
 
 uint16_t get_offset_from_virtual_address(uint32_t virtual_address)
 {
-    return virtual_address & 0x7FFF; // 0x7FFF es 15 bits todos a 1
+    return virtual_address & 0x7FFF;
 }
 
 int get_pfn_from_ipt(int process_id, uint16_t vpn)
 {
-    // Recorrer la tabla de páginas invertida
     for (int i = 0; i < IPT_ENTRY_COUNT; i++)
     {
         long entry_offset = IPT_OFFSET + (i * IPT_ENTRY_SIZE);
-        uint32_t entry_value = read_int(entry_offset) & 0xFFFFFF; // Leer 3 bytes
+        uint32_t entry_value = read_ipt_entry_value(entry_offset);
 
-        uint8_t valid = (entry_value >> 23) & 0x01;     // Bit 23: Validez
-        uint16_t id_proc = (entry_value >> 13) & 0x3FF; // Bits 13-22: ID proceso (10 bits)
-        uint16_t entry_vpn = entry_value & 0x1FFF;      // Bits 0-12: VPN (13 bits)
+        uint8_t valid = (entry_value >> 23) & 0x01;
+        uint16_t id_proc = (entry_value >> 13) & 0x3FF;
+        uint16_t entry_vpn = entry_value & 0x1FFF;
 
         if (valid && id_proc == process_id && entry_vpn == vpn)
         {
-            // El PFN es el índice de la entrada en la IPT
             return i;
         }
     }
-    return -1; // No se encontró una entrada válida
+    return -1;
 }
 
 int os_read_file(osrmsFile *file_desc, char *dest)
@@ -720,10 +703,10 @@ int os_read_file(osrmsFile *file_desc, char *dest)
     if (file_desc->size == 0)
     {
         printf("Advertencia: El archivo '%s' está vacío. No se leerá nada.\n", file_desc->name);
-        return 0; // Se leyeron 0 bytes
+        return 0;
     }
 
-    FILE *dest_file = fopen(dest, "wb"); // Abrir el archivo de destino en modo escritura binaria
+    FILE *dest_file = fopen(dest, "wb");
     if (dest_file == NULL)
     {
         perror("Error al abrir el archivo de destino para escritura");
@@ -736,54 +719,42 @@ int os_read_file(osrmsFile *file_desc, char *dest)
 
     while (remaining_bytes_to_read > 0)
     {
-        // 1. Obtener VPN y Offset de la dirección virtual actual
         uint16_t vpn = get_vpn_from_virtual_address(current_virtual_address);
         uint16_t offset_in_page = get_offset_from_virtual_address(current_virtual_address);
 
-        // 2. Buscar PFN en la IPT
         int pfn = get_pfn_from_ipt(file_desc->process_id, vpn);
 
         if (pfn == -1)
         {
             printf("Error: No se encontró entrada válida en IPT para PID %d, VPN %u. Lectura incompleta.\n",
                    file_desc->process_id, vpn);
-            break; // Salir si no se puede traducir la dirección
+            break;
         }
 
-        // 3. Calcular la dirección física
         long physical_address = FRAMES_OFFSET + (long)pfn * FRAME_SIZE + offset_in_page;
 
-        // 4. Determinar cuántos bytes leer en este chunk
-        // Esto es el mínimo entre:
-        // - lo que queda por leer del archivo
-        // - lo que queda de la página actual (FRAME_SIZE - offset_in_page)
         size_t bytes_to_read_this_chunk = FRAME_SIZE - offset_in_page;
         if (bytes_to_read_this_chunk > remaining_bytes_to_read)
         {
             bytes_to_read_this_chunk = remaining_bytes_to_read;
         }
 
-        // 5. Leer el chunk desde la memoria simulada
         fseek(memory_file, physical_address, SEEK_SET);
-        char buffer[bytes_to_read_this_chunk]; // Usar VLA, o malloc si no es C99
+        char buffer[bytes_to_read_this_chunk];
         size_t actual_read = fread(buffer, sizeof(char), bytes_to_read_this_chunk, memory_file);
 
         if (actual_read != bytes_to_read_this_chunk)
         {
             printf("Error de lectura: Se esperaban %zu bytes, se leyeron %zu. Lectura incompleta.\n",
                    bytes_to_read_this_chunk, actual_read);
-            break; // Error de lectura inesperado
+            break;
         }
 
-        // 6. Escribir el chunk en el archivo de destino local
         fwrite(buffer, sizeof(char), actual_read, dest_file);
 
         bytes_read += actual_read;
         remaining_bytes_to_read -= actual_read;
         current_virtual_address += actual_read;
-
-        // Si se leyó todo lo que quedaba en esta página, la siguiente iteración buscará la siguiente VPN
-        // Si no, el offset_in_page se ajustará automáticamente con current_virtual_address
     }
 
     fclose(dest_file);
@@ -801,14 +772,14 @@ void set_frame_bitmap_bit(int pfn, bool used)
     uint8_t current_byte = read_byte(byte_offset);
     if (used)
     {
-        current_byte |= (0x01 << bit_in_byte); // Poner el bit a 1
+        current_byte |= (0x01 << bit_in_byte);
     }
     else
     {
-        current_byte &= ~(0x01 << bit_in_byte); // Poner el bit a 0
+        current_byte &= ~(0x01 << bit_in_byte);
     }
     write_byte(byte_offset, current_byte);
-    fflush(memory_file); // Asegurar que el cambio se escriba en disco
+    fflush(memory_file);
 }
 
 int get_free_frame()
@@ -819,25 +790,22 @@ int get_free_frame()
         int bit_in_byte = i % 8;
         uint8_t byte = read_byte(byte_offset);
         if (!((byte >> bit_in_byte) & 0x01))
-        { // Si el bit es 0 (libre)
+        {
             return i;
         }
     }
-    return -1; // No se encontraron frames libres
+    return -1;
 }
 
 void set_ipt_entry(int pfn, int process_id, uint16_t vpn)
 {
     long entry_offset = IPT_OFFSET + (long)pfn * IPT_ENTRY_SIZE;
 
-    // Los 3 bytes de la IPT: 1 bit validez, 10 bits ID proceso, 13 bits VPN
-    // (Total: 1 + 10 + 13 = 24 bits = 3 bytes)
     uint32_t value = 0;
-    value |= (0x01 << 23);                         // Validez (bit 23 a 1)
-    value |= ((uint32_t)process_id & 0x3FF) << 13; // ID proceso (10 bits, mask 0x3FF = 1023)
-    value |= ((uint32_t)vpn & 0x1FFF);             // VPN (13 bits, mask 0x1FFF = 8191)
+    value |= (0x01 << 23);
+    value |= ((uint32_t)process_id & 0x3FF) << 13;
+    value |= ((uint32_t)vpn & 0x1FFF);
 
-    // Escribir solo 3 bytes (24 bits)
     uint8_t bytes[3];
     bytes[0] = (uint8_t)(value & 0xFF);
     bytes[1] = (uint8_t)((value >> 8) & 0xFF);
@@ -851,13 +819,10 @@ void clear_ipt_entry(int pfn)
 {
     long entry_offset = IPT_OFFSET + (long)pfn * IPT_ENTRY_SIZE;
 
-    // Leer la entrada actual para no modificar otros bits
-    uint32_t entry_value = read_int(entry_offset) & 0xFFFFFF; // Leer 3 bytes
+    uint32_t entry_value = read_ipt_entry_value(entry_offset);
 
-    // Poner el bit de validez (bit 23) a 0
     entry_value &= ~(0x01 << 23);
 
-    // Escribir solo 3 bytes (24 bits)
     uint8_t bytes[3];
     bytes[0] = (uint8_t)(entry_value & 0xFF);
     bytes[1] = (uint8_t)((entry_value >> 8) & 0xFF);
@@ -875,37 +840,35 @@ long find_process_pcb_entry(int process_id)
         uint8_t status = read_byte(pcb_offset);
         if (status == 0x01)
         {
-            // El ID del proceso está en la posición 1+14 = 15 dentro de la PCB
             long id_offset = pcb_offset + 1 + PROCESS_NAME_MAX_LEN;
-            uint8_t id = read_byte(id_offset); // El ID es de 1 Byte
+            uint8_t id = read_byte(id_offset);
             if (id == process_id)
             {
                 return pcb_offset;
             }
         }
     }
-    return -1; // Proceso no encontrado
+    return -1;
 }
 
 long find_free_file_table_entry(long pcb_offset)
 {
-    long file_table_offset_start = pcb_offset + 1 + PROCESS_NAME_MAX_LEN + 1; // Despues de estado, nombre y ID
+    long file_table_offset_start = pcb_offset + 1 + PROCESS_NAME_MAX_LEN + 1;
     for (int i = 0; i < MAX_FILES_PER_PROCESS; i++)
     {
         long file_entry_offset = file_table_offset_start + (long)i * FILE_ENTRY_SIZE;
-        uint8_t validity = read_byte(file_entry_offset); // Primer byte es la validez
+        uint8_t validity = read_byte(file_entry_offset);
         if (validity == 0x00)
-        { // Si el bit de validez es 0 (entrada libre)
+        {
             return file_entry_offset;
         }
     }
-    return -1; // No hay entradas libres en la tabla de archivos
+    return -1;
 }
 
 uint32_t find_and_assign_virtual_pages(int process_id, int num_pages_needed, int *assigned_pfns, uint16_t *assigned_vpns)
 {
     printf("\nOS_FIND_AND_ASSIGN_VIRTUAL_PAGES - Proceso %d, páginas necesarias: %d\n", process_id, num_pages_needed);
-    // 1. Encontrar los frames físicos libres
     int *temp_pfns = (int *)malloc(num_pages_needed * sizeof(int));
     if (temp_pfns == NULL)
     {
@@ -920,28 +883,19 @@ uint32_t find_and_assign_virtual_pages(int process_id, int num_pages_needed, int
         {
             printf("Error: No hay suficientes frames físicos libres para el archivo.\n");
             free(temp_pfns);
-            return -1; // No hay suficientes frames
+            return -1;
         }
         temp_pfns[i] = pfn;
     }
 
-    // 2. Encontrar las primeras 'num_pages_needed' VPNs consecutivas disponibles para este proceso
-    // Esto es lo más tricky con una IPT. Una forma es mantener un array de VPNs usadas por el proceso
-    // o simplemente buscar la primera VPN disponible que no esté en la IPT para este PID.
-    // Vamos a buscar la primera VPN disponible que no esté en la IPT para el PID.
-    // Esto implica que podríamos tener fragmentación de VPNs.
-
     uint16_t current_vpn_candidate = 0;
     for (int i = 0; i < NUM_VIRTUAL_PAGES; i++)
     {
-        // Asumimos que las VPNs no utilizadas por el proceso son "libres".
-        // Para verificar si una VPN está "libre" para un proceso,
-        // necesitamos verificar si existe alguna entrada en la IPT con ese PID y esa VPN.
         bool vpn_is_used_by_this_process = false;
         for (int j = 0; j < IPT_ENTRY_COUNT; j++)
         {
             long entry_offset = IPT_OFFSET + (j * IPT_ENTRY_SIZE);
-            uint32_t entry_value = read_int(entry_offset) & 0xFFFFFF; // Leer 3 bytes
+            uint32_t entry_value = read_ipt_entry_value(entry_offset);
 
             uint8_t valid = (entry_value >> 23) & 0x01;
             uint16_t id_proc = (entry_value >> 13) & 0x3FF;
@@ -963,13 +917,11 @@ uint32_t find_and_assign_virtual_pages(int process_id, int num_pages_needed, int
             {
                 uint16_t check_vpn = potential_start_vpn + k;
                 if (check_vpn >= NUM_VIRTUAL_PAGES)
-                { // Nos salimos del rango de VPNs virtuales
+                {
                     block_found = false;
                     break;
                 }
 
-                // Verificar si esta VPN (check_vpn) ya está usada por process_id
-                // (iterar IPT para cada una, o mejorar la búsqueda de IPT si es posible)
                 if (get_pfn_from_ipt(process_id, check_vpn) != -1)
                 {
                     block_found = false;
@@ -979,17 +931,15 @@ uint32_t find_and_assign_virtual_pages(int process_id, int num_pages_needed, int
 
             if (block_found)
             {
-                // Hemos encontrado un bloque de VPNs consecutivas libres para este proceso.
-                uint32_t base_virtual_address = (uint32_t)potential_start_vpn << 15; // VPN * PAGE_SIZE
+                uint32_t base_virtual_address = (uint32_t)potential_start_vpn << 15;
 
-                // 3. Asignar frames a estas VPNs e insertarlos en la IPT
                 for (int k = 0; k < num_pages_needed; k++)
                 {
                     int pfn_to_assign = temp_pfns[k];
                     uint16_t vpn_to_assign = potential_start_vpn + k;
 
-                    set_frame_bitmap_bit(pfn_to_assign, true);               // Marcar frame como usado
-                    set_ipt_entry(pfn_to_assign, process_id, vpn_to_assign); // Actualizar IPT
+                    set_frame_bitmap_bit(pfn_to_assign, true);
+                    set_ipt_entry(pfn_to_assign, process_id, vpn_to_assign);
                     assigned_pfns[k] = pfn_to_assign;
                     assigned_vpns[k] = vpn_to_assign;
                 }
@@ -999,12 +949,12 @@ uint32_t find_and_assign_virtual_pages(int process_id, int num_pages_needed, int
                 return base_virtual_address;
             }
         }
-        current_vpn_candidate++; // Siguiente VPN a intentar como inicio
+        current_vpn_candidate++;
     }
 
     free(temp_pfns);
     printf("Error: No se encontró un bloque de VPNs consecutivas libres para el proceso %d.\n", process_id);
-    return -1; // No se encontró un bloque de VPNs libres
+    return -1;
 }
 
 int os_write_file(osrmsFile *file_desc, char *src)
@@ -1026,8 +976,7 @@ int os_write_file(osrmsFile *file_desc, char *src)
     }
     printf("\nOS_WRITE_FILE - Proceso %d, archivo '%s'\n", file_desc->process_id, file_desc->name);
 
-    // 1. Obtener el tamaño del archivo de origen
-    FILE *src_file = fopen(src, "rb"); // Abrir el archivo de origen en modo lectura binaria
+    FILE *src_file = fopen(src, "rb");
     if (src_file == NULL)
     {
         perror("Error al abrir el archivo de origen para lectura");
@@ -1042,16 +991,14 @@ int os_write_file(osrmsFile *file_desc, char *src)
     {
         printf("Advertencia: El archivo de origen '%s' está vacío. No se escribirá nada.\n", src);
         fclose(src_file);
-        return 0; // Se escribieron 0 bytes
+        return 0;
     }
     printf("Source file size: %ld bytes\n", source_file_size);
 
-    // 2. Calcular cuántas páginas (frames) se necesitan
     int num_pages_needed = (source_file_size + VIRTUAL_PAGE_SIZE - 1) / VIRTUAL_PAGE_SIZE;
 
     printf("Pages needed: %d\n", num_pages_needed);
 
-    // 3. Buscar una entrada libre en la tabla de archivos del proceso
     long pcb_offset = find_process_pcb_entry(file_desc->process_id);
     if (pcb_offset == -1)
     {
@@ -1069,7 +1016,6 @@ int os_write_file(osrmsFile *file_desc, char *src)
         return -1;
     }
 
-    // 4. Asignar frames físicos y VPNs
     int *assigned_pfns = (int *)malloc(num_pages_needed * sizeof(int));
     uint16_t *assigned_vpns = (uint16_t *)malloc(num_pages_needed * sizeof(uint16_t));
     if (assigned_pfns == NULL || assigned_vpns == NULL)
@@ -1083,17 +1029,11 @@ int os_write_file(osrmsFile *file_desc, char *src)
         return -1;
     }
 
-    // La función find_and_assign_virtual_pages se encargará de:
-    // - Encontrar frames libres
-    // - Encontrar VPNs consecutivas y libres para el proceso
-    // - Marcar los frames en el bitmap
-    // - Crear las entradas en la IPT
     uint32_t base_virtual_address = find_and_assign_virtual_pages(
         file_desc->process_id, num_pages_needed, assigned_pfns, assigned_vpns);
 
     if (base_virtual_address == -1 && num_pages_needed > 0)
     {
-        // Si base_virtual_address es 0 y se necesitaban páginas, significa un error en la asignación
         printf("Error: No se pudo asignar memoria virtual y física para el archivo.\n");
         free(assigned_pfns);
         free(assigned_vpns);
@@ -1103,53 +1043,46 @@ int os_write_file(osrmsFile *file_desc, char *src)
 
     printf("Step 5\n");
 
-    // 5. Escribir el contenido del archivo
     int bytes_written = 0;
-    uint32_t current_virtual_address_in_file = 0; // Offset dentro del archivo local
+    uint32_t current_virtual_address_in_file = 0;
 
     while (bytes_written < source_file_size)
     {
-        // Calcular la dirección virtual global en el espacio del proceso
         uint32_t current_process_virtual_address = base_virtual_address + current_virtual_address_in_file;
 
-        // Obtener VPN y Offset para la traducción
         uint16_t vpn = get_vpn_from_virtual_address(current_process_virtual_address);
         uint16_t offset_in_page = get_offset_from_virtual_address(current_process_virtual_address);
 
-        // Buscar PFN en la IPT (debería existir porque lo acabamos de asignar)
         int pfn = get_pfn_from_ipt(file_desc->process_id, vpn);
 
         if (pfn == -1)
         {
             printf("Error crítico: PFN no encontrado para VPN %u después de asignación. Abortando escritura.\n", vpn);
-            bytes_written = -1; // Indicar error severo
+            bytes_written = -1;
             break;
         }
 
-        // Calcular la dirección física
         long physical_address = FRAMES_OFFSET + (long)pfn * FRAME_SIZE + offset_in_page;
 
-        // Determinar cuántos bytes escribir en este chunk
         size_t bytes_to_write_this_chunk = VIRTUAL_PAGE_SIZE - offset_in_page;
         if (bytes_to_write_this_chunk > (source_file_size - bytes_written))
         {
             bytes_to_write_this_chunk = (source_file_size - bytes_written);
         }
 
-        char buffer[bytes_to_write_this_chunk]; // VLA
+        char buffer[bytes_to_write_this_chunk];
         size_t actual_read = fread(buffer, sizeof(char), bytes_to_write_this_chunk, src_file);
 
         if (actual_read == 0 && bytes_to_write_this_chunk > 0)
         {
             printf("Error de lectura del archivo fuente local. Se esperaban %zu bytes, se leyeron 0.\n", bytes_to_write_this_chunk);
-            bytes_written = -1; // Indicar error
+            bytes_written = -1;
             break;
         }
 
-        // Escribir el chunk en la memoria simulada
         fseek(memory_file, physical_address, SEEK_SET);
         fwrite(buffer, sizeof(char), actual_read, memory_file);
-        fflush(memory_file); // Asegurar que se escriba en el archivo
+        fflush(memory_file);
 
         bytes_written += actual_read;
         current_virtual_address_in_file += actual_read;
@@ -1158,26 +1091,15 @@ int os_write_file(osrmsFile *file_desc, char *src)
     fclose(src_file);
 
     printf("Step 6\n");
-    // 6. Actualizar la entrada de la tabla de archivos en la PCB
     if (bytes_written != -1)
-    { // Solo si no hubo errores graves
-        // 1 Byte validez (0x01)
+    {
         write_byte(file_table_entry_offset, 0x01);
-        // 14 Bytes nombre
         write_string(file_table_entry_offset + 1, file_desc->name, FILE_NAME_MAX_LEN);
-        // 5 Bytes tamaño (se almacena como un entero de 4 bytes, y un byte de padding para ser 5 bytes en total)
-        // Para simplificar, asumiremos que se guardan 4 bytes del tamaño y el quinto es padding o un byte de control.
-        // La especificación dice 5 bytes tamaño. Si es un entero, lo más común es 4.
-        // Vamos a guardar el tamaño como un int32_t (4 bytes) y un byte de padding/relleno a 0.
         write_int(file_table_entry_offset + 1 + FILE_NAME_MAX_LEN, (uint32_t)source_file_size);
-        write_byte(file_table_entry_offset + 1 + FILE_NAME_MAX_LEN + 4, 0x00); // Relleno de 1 byte
-
-        // 4 Bytes dirección virtual (5 bits padding, 12 bits VPN, 15 bits offset)
-        // La dirección virtual ya está calculada como base_virtual_address
+        write_byte(file_table_entry_offset + 1 + FILE_NAME_MAX_LEN + 4, 0x00);
         write_int(file_table_entry_offset + 1 + FILE_NAME_MAX_LEN + 5, base_virtual_address);
         fflush(memory_file);
 
-        // 7. Actualizar el osrmsFile* file_desc
         file_desc->virtual_addr = base_virtual_address;
         file_desc->size = source_file_size;
 
@@ -1186,19 +1108,12 @@ int os_write_file(osrmsFile *file_desc, char *src)
     }
     else
     {
-        // En caso de error, necesitamos deshacer las asignaciones de frames y IPT.
-        // Esto es un "rollback" que se podría hacer en una función separada.
-        // Por simplicidad, para la tarea, a menudo se espera que se maneje el error y no se haga rollback explícito.
-        // Pero para un sistema real, sería crucial.
-        // En este caso, al retornar -1, se asume que la operación falló y el estado de la memoria puede ser inconsistente.
         printf("Error: Falló la escritura del archivo '%s'. Deshaciendo asignaciones...\n", file_desc->name);
-        // Implementar rollback aquí si fuera necesario
-        // Por ahora, solo limpiamos los arrays dinámicos
         if (assigned_pfns)
             free(assigned_pfns);
         if (assigned_vpns)
             free(assigned_vpns);
-        return -1; // Retorna -1 si hubo un error crítico
+        return -1;
     }
 
     if (assigned_pfns)
@@ -1206,4 +1121,87 @@ int os_write_file(osrmsFile *file_desc, char *src)
     if (assigned_vpns)
         free(assigned_vpns);
     return bytes_written;
+}
+
+void os_delete_file(int process_id, char *file_name)
+{
+    if (memory_file == NULL)
+    {
+        printf("Error: Memoria no montada. Use os_mount() primero.\n");
+        return;
+    }
+
+    long pcb_offset = find_process_pcb_entry(process_id);
+    if (pcb_offset == -1)
+    {
+        printf("Error: Proceso con ID %d no encontrado.\n", process_id);
+        return;
+    }
+
+    long file_table_offset_start = pcb_offset + 1 + PROCESS_NAME_MAX_LEN + 1;
+
+    long found_file_entry_offset = -1;
+    uint32_t file_virtual_address = 0;
+    uint32_t file_size = 0;
+
+    for (int i = 0; i < MAX_FILES_PER_PROCESS; i++)
+    {
+        long current_file_entry_offset = file_table_offset_start + (long)i * FILE_ENTRY_SIZE;
+        uint8_t validity = read_byte(current_file_entry_offset);
+
+        if (validity == 0x01)
+        {
+            char stored_file_name[FILE_NAME_MAX_LEN + 1];
+            read_string(current_file_entry_offset + 1, stored_file_name, FILE_NAME_MAX_LEN);
+
+            if (strcmp(stored_file_name, file_name) == 0)
+            {
+                found_file_entry_offset = current_file_entry_offset;
+                file_size = read_int(current_file_entry_offset + 1 + FILE_NAME_MAX_LEN);
+                file_virtual_address = read_int(current_file_entry_offset + 1 + FILE_NAME_MAX_LEN + 5);
+                break;
+            }
+        }
+    }
+
+    if (found_file_entry_offset == -1)
+    {
+        printf("Error: Archivo '%s' no encontrado en el proceso %d.\n", file_name, process_id);
+        return;
+    }
+
+    int num_pages_occupied = (file_size + VIRTUAL_PAGE_SIZE - 1) / VIRTUAL_PAGE_SIZE;
+    printf("El archivo '%s' (PID %d) ocupa %u bytes en %d páginas.\n",
+           file_name, process_id, file_size, num_pages_occupied);
+
+    uint32_t current_virtual_address = file_virtual_address;
+    for (int i = 0; i < num_pages_occupied; i++)
+    {
+        uint16_t vpn = get_vpn_from_virtual_address(current_virtual_address);
+
+        int pfn = get_pfn_from_ipt(process_id, vpn);
+
+        if (pfn != -1)
+        {
+            clear_ipt_entry(pfn);
+            set_frame_bitmap_bit(pfn, false);
+            printf("  - Liberado PFN %d (VPN %u) para PID %d.\n", pfn, vpn, process_id);
+        }
+        else
+        {
+            printf("  - Advertencia: No se encontró PFN para VPN %u (PID %d) al eliminar. Posible inconsistencia.\n",
+                   vpn, process_id);
+        }
+
+        current_virtual_address += VIRTUAL_PAGE_SIZE;
+    }
+
+    write_byte(found_file_entry_offset, 0x00);
+    write_string(found_file_entry_offset + 1, "", FILE_NAME_MAX_LEN);
+    write_int(found_file_entry_offset + 1 + FILE_NAME_MAX_LEN, 0);
+    write_byte(found_file_entry_offset + 1 + FILE_NAME_MAX_LEN + 4, 0x00);
+    write_int(found_file_entry_offset + 1 + FILE_NAME_MAX_LEN + 5, 0);
+    fflush(memory_file);
+
+    printf("Archivo '%s' del proceso %d eliminado exitosamente.\n", file_name, process_id);
 }
