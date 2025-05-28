@@ -1,11 +1,9 @@
-memformat.bin
-memfilled.bin
+*.bin
 osms
 /Archivos
 /src/osms/main.c
 /obj
-memformat.zip
-memfilled.zip
+*.zip
 osrms
 obj
 *.txt
